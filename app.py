@@ -14,6 +14,7 @@ from parser import parse
 from simulator import RobotSimulator
 from chain_executor import parse_command_chain, execute_chain_step, get_chain_status, reset_chain
 from visualizer import get_workspace_visualization
+from speech import get_transcription_service_status
 
 # ── Flask Setup ──────────────────────────────────────────────────────────────
 
@@ -251,6 +252,12 @@ def api_visualize():
     """Get 2D workspace visualization as SVG."""
     svg = get_workspace_visualization(robot.get_status())
     return svg, 200, {"Content-Type": "image/svg+xml"}
+
+
+@app.route("/api/speech/status", methods=["GET"])
+def api_speech_status():
+    """Check available speech-to-text services."""
+    return jsonify(get_transcription_service_status())
 
 
 # ── Error Handlers ───────────────────────────────────────────────────────────

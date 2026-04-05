@@ -392,6 +392,7 @@ nav {
       <input class="cmd-in" id="cmdIn" type="text"
         placeholder="Describe what you want the robot to do…"
         autocomplete="off" spellcheck="false"/>
+      <button class="cmd-go" id="voiceBtn" onclick="toggleVoice()" title="Voice input (click to speak)">🎤</button>
       <button class="cmd-go" id="goBtn" onclick="go()">Parse</button>
     </div>
   </div>
@@ -854,6 +855,96 @@ function renderHist() {
 // ── Keyboard ──────────────────────────────────────────────────────────────
 document.getElementById('cmdIn').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 document.getElementById('apiField').addEventListener('keydown', e => { if (e.key === 'Enter') saveKey(); });
+
+// ── Voice Input ───────────────────────────────────────────────────────────
+
+let isListening = false;
+let recognition = null;
+
+function initVoice() {
+  // Check browser support
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.warn('[Voice] Web Speech API not supported in this browser');
+    document.getElementById('voiceBtn').style.display = 'none';
+    return false;
+  }
+  
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.language = 'en-US';
+  
+  recognition.onstart = () => {
+    isListening = true;
+    const btn = document.getElementById('voiceBtn');
+    btn.textContent = '🎤 Listening...';
+    btn.style.backgroundColor = 'var(--accent)';
+    btn.style.color = '#090909';
+  };
+  
+  recognition.onresult = (event) => {
+    let transcript = '';
+    let interim = '';
+    
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const t = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        transcript += t + ' ';
+      } else {
+        interim += t;
+      }
+    }
+    
+    if (transcript) {
+      document.getElementById('cmdIn').value = transcript.trim();
+    }
+    
+    if (interim) {
+      document.getElementById('cmdIn').placeholder = interim;
+    }
+  };
+  
+  recognition.onerror = (event) => {
+    console.error('[Voice] Error:', event.error);
+    const btn = document.getElementById('voiceBtn');
+    btn.textContent = '🎤';
+    btn.style.backgroundColor = '';
+    btn.style.color = '';
+    isListening = false;
+  };
+  
+  recognition.onend = () => {
+    const btn = document.getElementById('voiceBtn');
+    btn.textContent = '🎤';
+    btn.style.backgroundColor = '';
+    btn.style.color = '';
+    isListening = false;
+  };
+  
+  return true;
+}
+
+function toggleVoice() {
+  if (!recognition) {
+    if (!initVoice()) {
+      alert('Web Speech API not supported in your browser. Try Chrome or Edge.');
+      return;
+    }
+  }
+  
+  if (isListening) {
+    recognition.stop();
+  } else {
+    document.getElementById('cmdIn').value = '';
+    recognition.start();
+  }
+}
+
+// Initialize voice on page load
+window.addEventListener('DOMContentLoaded', () => {
+  initVoice();
+});
 </script>
 </body>
 </html>
