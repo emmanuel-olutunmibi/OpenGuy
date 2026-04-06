@@ -28,6 +28,10 @@ class MockWhatsAppBot(OpenGuyWhatsAppBot):
         from notes_manager import NoteManager
         self.notes = NoteManager(notes_dir="test_robot_notes")
         
+        # Robot learner
+        from robot_learner import RobotLearner
+        self.learner = RobotLearner("test_robot", "test_learning")
+        
         # Rate limiting settings
         self.rate_limit = (10, 60)
         

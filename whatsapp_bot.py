@@ -12,10 +12,12 @@ from typing import Optional, Dict, Any
 import requests
 import json
 from datetime import datetime, timedelta
+import time
 
 from parser import parse
 from hybrid_sim import HybridExecutor
 from notes_manager import NoteManager
+from robot_learner import RobotLearner
 from bot_exceptions import (
     BotException, HardwareException, CommandParseException,
     ValidationException, RateLimitException, SafetyException,
@@ -48,6 +50,9 @@ class OpenGuyWhatsAppBot:
         
         # Note management for persistent storage
         self.notes = NoteManager()
+        
+        # Robot learning system for autonomous adaptation
+        self.learner = RobotLearner("openguy_robot")
         
         # Rate limiting: max 10 commands per 60 seconds per user
         self.rate_limit = (10, 60)  # (max_commands, time_window_seconds)
@@ -211,6 +216,8 @@ class OpenGuyWhatsAppBot:
                 return "❌ Format: /note title:content"
             elif text == "/history" or text.lower() == "history":
                 return self._handle_history(phone_number)
+            elif text == "/learn" or text.lower() == "learn":
+                return self._handle_learn(phone_number)
             elif text == "/stop" or text.lower() == "stop":
                 return self._handle_stop(phone_number)
             elif text.startswith("/"):
@@ -251,6 +258,10 @@ class OpenGuyWhatsAppBot:
             "/help - Show this help\n"
             "/status - Robot status\n"
             "/mode - Check simulator/hardware mode\n"
+            "/history - View recent commands\n"
+            "/learn - Show robot learning report\n"
+            "/notes - View your notes\n"
+            "/note title:content - Save a note\n"
             "/stop - Stop command chain\n\n"
             "*Robot Commands:*\n"
             "Say anything to control the robot:\n"
@@ -262,7 +273,13 @@ class OpenGuyWhatsAppBot:
             "go 10cm right\n"
             "spin 90 degrees\n"
             "pick up the block\n"
-            "move forward 20cm and release"
+            "move forward 20cm and release\n\n"
+            "*🤖 Robot Learning:*\n"
+            "The robot learns from every command!\n"
+            "• Tracks success/failure patterns\n"
+            "• Automatically adjusts movement size\n"
+            "• Recovers better from known failures\n"
+            "Type /learn to see what it has learned."
         )
         return response
     
@@ -340,6 +357,46 @@ class OpenGuyWhatsAppBot:
             action = cmd.get("parsed", {}).get("action", "unknown")
             success = "✅" if cmd.get("success") else "❌"
             response += f"{success} {action}: {cmd.get('command', '')}\n"
+        
+        return response
+    
+    def _handle_learn(self, phone_number: str) -> str:
+        """Show what the robot has learned from all users' experiences."""
+        report = self.learner.get_learning_report()
+        
+        if report['total_experiences'] == 0:
+            return "📚 *No learning data yet.*\n\nTry executing some commands first!"
+        
+        response = "📚 *Robot Learning Report*\n\n"
+        response += f"*Total Experiences:* {report['total_experiences']}\n"
+        response += f"*Success Rate:* {report['overall_success_rate']}\n"
+        response += f"*Learned Strategies:* {report['learned_strategies']}\n\n"
+        
+        response += "*Learned Commands:*\n"
+        
+        strategies = report.get('strategies', {})
+        if strategies:
+            for cmd_name, strategy in list(strategies.items())[:5]:  # Show top 5
+                success_rate = strategy.get('success_rate', 'N/A')
+                attempts = strategy.get('total_attempts', 0)
+                status = strategy.get('adaptation_status', 'Learning')
+                response += f"\n• *{cmd_name}*\n"
+                response += f"  Success: {success_rate} ({attempts} attempts)\n"
+                response += f"  Status: {status}\n"
+                
+                failures = strategy.get('common_failures', {})
+                if failures:
+                    top_failure = list(failures.items())[0]
+                    response += f"  ⚠️ Most common issue: {top_failure[0]} ({top_failure[1]}x)\n"
+        else:
+            response += "No strategies learned yet."
+        
+        response += "\n\n💡 *How it works:*\n"
+        response += "• Robot learns from every command\n"
+        response += "• Automatically reduces risky moves after failures\n"
+        response += "• Increases confidence after successes\n"
+        response += "• Breaks large moves into steps if needed\n"
+        response += "• Saves learned behavior to disk"
         
         return response
     
@@ -434,9 +491,12 @@ class OpenGuyWhatsAppBot:
     
     def _handle_robot_command(self, phone_number: str, text: str) -> str:
         """
-        Handle robot commands with safety checks and error handling.
+        Handle robot commands with safety checks, error handling, and learning.
+        Uses robot learner to adapt parameters based on past experiences.
         """
         try:
+            start_time = time.time()
+            
             # Parse the command
             parsed = parse(text, use_ai=True)
             
@@ -446,16 +506,73 @@ class OpenGuyWhatsAppBot:
             # Safety checks
             self._validate_command_safety(parsed)
             
-            # Execute the command
-            try:
-                result = self.executor.execute(
-                    action=parsed['action'],
-                    direction=parsed['direction'],
-                    distance_cm=parsed['distance_cm'],
-                    angle_deg=parsed['angle_deg']
-                )
-            except Exception as e:
-                raise ExecutorException(f"Robot execution failed: {str(e)}")
+            # Get adaptive parameters from learner
+            adaptive_params = self.learner.get_adaptive_parameters(
+                action=parsed['action'],
+                direction=parsed['direction'],
+                distance=parsed['distance_cm'],
+                angle=parsed['angle_deg']
+            )
+            
+            # Apply learning-based adjustments to parameters
+            execution_distance = adaptive_params['distance']
+            execution_angle = adaptive_params['angle']
+            execution_time = 0.0
+            
+            # Execute the command (possibly in multiple steps if learner recommends it)
+            if adaptive_params['break_into_steps'] and parsed['distance_cm']:
+                # Break into smaller steps for better control
+                num_steps = adaptive_params['recommended_steps']
+                step_distance = execution_distance / num_steps if execution_distance else None
+                result = None
+                
+                for step in range(num_steps):
+                    step_result = self.executor.execute(
+                        action=parsed['action'],
+                        direction=parsed['direction'],
+                        distance_cm=step_distance,
+                        angle_deg=execution_angle if step == num_steps - 1 else 0
+                    )
+                    result = step_result
+            else:
+                # Execute in single step
+                try:
+                    result = self.executor.execute(
+                        action=parsed['action'],
+                        direction=parsed['direction'],
+                        distance_cm=execution_distance,
+                        angle_deg=execution_angle
+                    )
+                except Exception as e:
+                    execution_time = time.time() - start_time
+                    # Record failure for learning
+                    error_type = "COLLISION" if "collision" in str(e).lower() else \
+                                "TIMEOUT" if "timeout" in str(e).lower() else \
+                                "HARDWARE_ERROR"
+                    self.learner.record_experience(
+                        action=parsed['action'],
+                        direction=parsed['direction'],
+                        distance=parsed['distance_cm'],
+                        angle=parsed['angle_deg'],
+                        success=False,
+                        error=error_type,
+                        execution_time=execution_time,
+                        notes=f"User: {phone_number}"
+                    )
+                    raise ExecutorException(f"Robot execution failed: {str(e)}")
+            
+            execution_time = time.time() - start_time
+            
+            # Record success for learning
+            self.learner.record_experience(
+                action=parsed['action'],
+                direction=parsed['direction'],
+                distance=parsed['distance_cm'],
+                angle=parsed['angle_deg'],
+                success=True,
+                execution_time=execution_time,
+                notes=f"User: {phone_number}"
+            )
             
             # Update session
             self.user_sessions[phone_number]['last_action'] = parsed['action']
@@ -483,11 +600,22 @@ class OpenGuyWhatsAppBot:
             if parsed['direction']:
                 response += f"*Direction:* {parsed['direction']}\n"
             if parsed['distance_cm']:
-                response += f"*Distance:* {parsed['distance_cm']}cm\n"
+                response += f"*Distance:* {parsed['distance_cm']}cm"
+                if execution_distance != parsed['distance_cm']:
+                    response += f" (adjusted to {execution_distance:.0f}cm)"
+                response += "\n"
             if parsed['angle_deg']:
                 response += f"*Angle:* {parsed['angle_deg']}°\n"
             
             response += f"\n*Result:*\n" + "\n".join(lines)
+            
+            # Add learning feedback
+            attempts = adaptive_params.get('attempts', 0)
+            if adaptive_params.get('confidence', 0.5) < 0.6 and attempts > 0:
+                response += f"\n\n💡 *Learning Status:* {adaptive_params.get('success_rate', 'N/A')} success rate " \
+                           f"over {attempts} attempts (being cautious)"
+            elif attempts > 5:
+                response += f"\n\n✅ *Learned:* {adaptive_params.get('success_rate', 'N/A')} success rate"
             
             return response
             
