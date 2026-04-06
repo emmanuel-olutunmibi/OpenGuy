@@ -57,6 +57,8 @@ Output  →  Step 1/3 ✓ Step 2/3 ✓ Step 3/3 ✓
 - ✅ Context-aware smart suggestions
 - ✅ Persistent command history with replay
 - ✅ Offline operation (regex parser works without API)
+- ✅ **Real hardware integration** (USB/Serial with auto-detection)
+- ✅ **Hybrid simulator/hardware mode** (seamless switching)
 
 ### API Endpoints
 - `GET /` — Web UI
@@ -107,7 +109,32 @@ Production-ready REST API with:
 
 ---
 
-## Installation & Usage
+## Hardware Integration
+
+OpenGuy automatically detects and uses connected robot hardware. When no hardware is available, it falls back to simulation seamlessly.
+
+### Supported Hardware
+- **Arduino-based Robot Arms** (DIY 5-DOF, auto-detected)
+- **Simulator Fallback** (PyBullet 3D + 2D modes)
+
+### Quick Start with Hardware
+
+```python
+from hybrid_sim import HybridExecutor
+
+# Auto-detects hardware on startup
+executor = HybridExecutor(try_hardware=True)
+
+# Commands automatically use hardware if available
+executor.execute('move', 'forward', 10)
+
+# Check mode
+print(executor.get_status()['mode'])  # "hardware" or "simulator"
+```
+
+For detailed hardware setup, see [HARDWARE.md](HARDWARE.md)
+
+---
 
 ### Web UI (Recommended)
 ```bash
@@ -176,7 +203,7 @@ OpenGuy/
 
 ### 🚧 In Progress / Planned
 - [x] PyBullet 3D physics simulation
-- [ ] Real hardware integration (USB/Serial)
+- [x] Real hardware integration (USB/Serial)
 - [ ] Telegram bot interface
 - [ ] WhatsApp bot integration
 - [ ] Mobile app (React Native)
