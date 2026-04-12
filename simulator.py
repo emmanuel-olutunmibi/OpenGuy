@@ -3,20 +3,20 @@ simulator.py - Robot arm simulator with state tracking and validation.
 Tracks position, orientation, and gripper state.
 """
 
-from typing import Optional, Dict, Any
 import math
+from typing import Optional, Dict, Any
+from hardware.base import HardwareBackend
 
 try:
     import pybullet as p
-    import pybullet_data
     PYBULLET_AVAILABLE = True
 except ImportError:
     PYBULLET_AVAILABLE = False
-    print("[Simulator] PyBullet not available, using 2D fallback")
+    p = None
 
 
-class RobotSimulator:
-    """Simulates a 3D robot arm with physics using PyBullet."""
+class RobotSimulator(HardwareBackend):
+    """Simulates a 2D robot arm with position, rotation, and gripper control."""
     
     # Workspace boundaries (in cm)
     MIN_X = -100.0
@@ -33,11 +33,12 @@ class RobotSimulator:
         self.gripper_open: bool = True
         self.command_count: int = 0
         
-        if self.use_3d:
+        if self.use_3d and PYBULLET_AVAILABLE:
             self._init_pybullet()
             print("[Simulator] 3D PyBullet simulation initialized")
         else:
-            print("[Simulator] 2D simulation initialized (PyBullet available for future 3D)")
+            self.use_3d = False
+            print("[Simulator] 2D simulation initialized")
 
     def _init_pybullet(self):
         """Initialize PyBullet physics simulation."""
@@ -371,3 +372,30 @@ class RobotSimulator:
     def _status(self):
         """Legacy method for CLI output."""
         print(f"[Robot] {self._get_status_str()}\n")
+
+    # ── HardwareBackend contract ──────────────────────────────────────────────
+
+    def connect(self) -> bool:
+        """Simulator needs no connection — always ready."""
+        print("[Simulator] Ready (in-memory simulation)")
+        return True
+
+    def disconnect(self) -> None:
+        """Nothing to close."""
+        pass
+
+    def is_connected(self) -> bool:
+        return True
+
+    def reset(self) -> None:
+        """Reset to initial state."""
+        self.x = 0.0
+        self.y = 0.0
+        self.facing = 0.0
+        self.gripper_open = True
+        self.command_count = 0
+        print("[Simulator] Reset to initial state")
+
+    @property
+    def name(self) -> str:
+        return "simulator"

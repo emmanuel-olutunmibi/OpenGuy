@@ -5,16 +5,13 @@ Serves the HTML UI and provides REST API endpoints for parsing and simulation.
 
 import os
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, render_template_string, request, jsonify
 from parser import parse
-from simulator import RobotSimulator
-from hybrid_sim import HybridExecutor
-from telegram_webhook import setup_telegram_webhook
-from whatsapp_webhook import setup_whatsapp_webhook
+from hardware import HardwareManager
 from chain_executor import parse_command_chain, execute_chain_step, get_chain_status, reset_chain
 from visualizer import get_workspace_visualization
 from speech import get_transcription_service_status
@@ -24,8 +21,9 @@ from speech import get_transcription_service_status
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 
-# Global robot executor (hybrid: hardware with simulator fallback)
-robot = HybridExecutor(try_hardware=True)
+# Global hardware manager — routes commands to simulator / ROS / IoT
+# Change "backend" in hardware.json to switch targets (no code change needed)
+robot = HardwareManager()
 
 # Command history file
 HISTORY_FILE = Path("command_history.json")
@@ -141,8 +139,7 @@ def api_status():
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     """Reset the robot to initial state."""
-    global robot
-    robot = RobotSimulator()
+    robot.reset()
     return jsonify({"success": True, "message": "Robot reset to initial state"})
 
 
